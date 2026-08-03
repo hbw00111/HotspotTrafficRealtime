@@ -12,6 +12,7 @@ Hotspot Traffic 使用 SwiftUI、系统自带的 `nettop` 和 SQLite，统计 Ma
 
 - 实时显示下载、上传和合计速度
 - 菜单栏可自由组合图标、实时下载、实时上传和今日用量
+- 作为菜单栏 App 后台运行，不占用程序坞位置
 - 按今天、7 天、30 天或自定义日期查看历史
 - 按应用统计流量，并单独展示 Shadowrocket、MacPacketTunnel、tun2socks 等隧道进程
 - 前台 5 秒采样，后台自动降为 30 秒，历史数据分批写入
@@ -19,7 +20,7 @@ Hotspot Traffic 使用 SwiftUI、系统自带的 `nettop` 和 SQLite，统计 Ma
 
 ## 下载
 
-前往 [Releases](../../releases/latest) 下载 `HotspotTraffic-v1.1.0-macOS-arm64.zip`，解压后打开 `HotspotTraffic.app`。当前预编译版本适用于 Apple Silicon Mac；其他架构可以按下文从源码构建。
+前往 [Releases](../../releases/latest) 下载 `HotspotTraffic-v1.1.1-macOS-arm64.zip`，解压后打开 `HotspotTraffic.app`。当前预编译版本适用于 Apple Silicon Mac；其他架构可以按下文从源码构建。
 
 当前构建使用临时本地签名。macOS 首次提示来源时，在 Finder 中右键 App，选择“打开”。
 
