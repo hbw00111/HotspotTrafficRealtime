@@ -1,0 +1,32 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build release app
+        run: ./scripts/build-app.sh
+      - name: Run core verification
+        run: |
+          verify_dir="$(mktemp -d)"
+          swiftc -parse-as-library \
+            Sources/HotspotTrafficApp/Models.swift \
+            Sources/HotspotTrafficApp/NettopParser.swift \
+            Sources/HotspotTrafficApp/TrafficStore.swift \
+            scripts/verify-core.swift \
+            -lsqlite3 \
+            -o "$verify_dir/verify-core"
+          "$verify_dir/verify-core"
+      - name: Package app
+        run: ./scripts/package-release.sh 1.0.0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HotspotTraffic-macOS
+          path: outputs/HotspotTraffic-v1.0.0-macOS-*.zip
