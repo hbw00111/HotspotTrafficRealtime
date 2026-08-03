@@ -3,243 +3,233 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var model: DashboardModel
+    @State private var detailSection: DetailSection = .applications
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 header
-                liveTraffic
-                overview
+
+                if model.selectedRange == .custom {
+                    customRangeControls
+                }
+
                 if let error = model.collectorStatus.errorMessage {
                     notice(icon: "exclamationmark.triangle.fill", color: .orange, text: error)
                 }
+
+                summaryPanel
+
                 if model.summary.sampleCount == 0 {
                     emptyState
                 } else {
                     dashboard
-                    details
-                    if !model.summary.tunnels.isEmpty {
-                        tunnelDetails
-                    }
+                    detailsPanel
                 }
             }
-            .padding(28)
+            .padding(22)
         }
-        .frame(minWidth: 980, minHeight: 700)
-            .background(Color(nsColor: .windowBackgroundColor))
-    }
-
-    private var liveTraffic: some View {
-        Surface {
-            HStack(spacing: 20) {
-                HStack(spacing: 9) {
-                    Circle()
-                        .fill(model.collectorStatus.isHealthy ? .green : .secondary)
-                        .frame(width: 8, height: 8)
-                    VStack(alignment: .leading, spacing: 4) {
-                        sectionKicker("实时速率")
-                        Text("热点当前上下行")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    }
-                }
-
-                Spacer()
-
-                LiveRateTile(
-                    title: "下载",
-                    value: liveSpeed(model.collectorStatus.downloadBytesPerSecond),
-                    icon: "arrow.down",
-                    tint: .blue
-                )
-                Divider().frame(height: 42)
-                LiveRateTile(
-                    title: "上传",
-                    value: liveSpeed(model.collectorStatus.uploadBytesPerSecond),
-                    icon: "arrow.up",
-                    tint: .orange
-                )
-                Divider().frame(height: 42)
-                LiveRateTile(
-                    title: "合计",
-                    value: liveSpeed(model.collectorStatus.downloadBytesPerSecond + model.collectorStatus.uploadBytesPerSecond),
-                    icon: "arrow.up.arrow.down",
-                    tint: .green
-                )
-            }
-        }
+        .frame(minWidth: 940, minHeight: 680)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private var header: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             Image(systemName: "antenna.radiowaves.left.and.right")
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.green)
-                .frame(width: 42, height: 42)
-                .background(Color.green.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 7))
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text("PERSONAL HOTSPOT")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .tracking(1.4)
-                    .foregroundStyle(.green)
+            VStack(alignment: .leading, spacing: 2) {
                 Text("热点流量")
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-            }
-
-            Spacer()
-
-            HStack(spacing: 9) {
-                    Circle()
-                    .fill(collectorStateColor)
-                    .frame(width: 8, height: 8)
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(collectorStateTitle)
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(collectorRefreshLabel)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Button(model.collectorStatus.isRunning ? "停止采集" : "启动采集") {
-                model.toggleCollector()
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(model.collectorStatus.isRunning ? .secondary : .green)
-        }
-    }
-
-    private var overview: some View {
-        Surface {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        sectionKicker("流量总览")
-                        Text(rangeTitle)
-                            .font(.system(size: 20, weight: .bold, design: .rounded))
-                        Text(model.summary.lastSample.map { "最近采样 \(dateTime($0))" } ?? "还没有本地采样")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    rangeControls
-                }
-
-                Divider()
-
-                HStack(spacing: 0) {
-                    MetricTile(title: "总流量", value: bytes(model.summary.totalBytes), detail: model.summary.apps.first.map { "最高 · \($0.process)" } ?? "下载与上传", accent: .green)
-                    Divider().frame(height: 58)
-                    MetricTile(title: "下载", value: bytes(model.summary.bytesIn), detail: "接收数据", accent: .blue)
-                    Divider().frame(height: 58)
-                    MetricTile(title: "上传", value: bytes(model.summary.bytesOut), detail: "发送数据", accent: .orange)
-                    Divider().frame(height: 58)
-                    MetricTile(title: "活跃应用", value: "\(model.summary.apps.count)", detail: "\(model.summary.sampleCount) 条采样", accent: .purple)
-                }
-
-                if model.summary.tunnelBytes > 0 {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                        Text("已分离隧道传输 \(bytes(model.summary.tunnelBytes)) · \(model.summary.tunnelProcesses.joined(separator: "、"))")
-                    }
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 20, weight: .semibold))
+                Text(model.summary.lastSample.map { "最近采样 \(dateTime($0))" } ?? "等待本地采样")
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 18)
+
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(collectorStateColor)
+                    .frame(width: 7, height: 7)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(collectorStateTitle)
+                        .font(.system(size: 11, weight: .medium))
+                    Text(collectorRefreshLabel)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
-        }
-    }
+            .frame(width: 150, alignment: .leading)
 
-    private var rangeControls: some View {
-        VStack(alignment: .trailing, spacing: 10) {
             Picker("时间范围", selection: $model.selectedRange) {
                 ForEach(TrafficRange.allCases) { range in
                     Text(range.title).tag(range)
                 }
             }
+            .labelsHidden()
             .pickerStyle(.segmented)
-            .frame(width: 310)
+            .frame(width: 270)
 
-            if model.selectedRange == .custom {
-                HStack(spacing: 8) {
-                    DatePicker("开始", selection: $model.customFrom, displayedComponents: .date)
-                    DatePicker("结束", selection: $model.customTo, displayedComponents: .date)
-                    Button("应用") { model.applyCustomRange() }
-                        .buttonStyle(.bordered)
+            Button {
+                model.toggleCollector()
+            } label: {
+                Label(
+                    model.collectorStatus.isRunning ? "停止" : "开始",
+                    systemImage: model.collectorStatus.isRunning ? "stop.fill" : "play.fill"
+                )
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+            .tint(model.collectorStatus.isRunning ? .secondary : .accentColor)
+        }
+    }
+
+    private var customRangeControls: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "calendar")
+                .foregroundStyle(.secondary)
+            DatePicker("开始", selection: $model.customFrom, displayedComponents: .date)
+            DatePicker("结束", selection: $model.customTo, displayedComponents: .date)
+            Button("应用") { model.applyCustomRange() }
+                .buttonStyle(.borderedProminent)
+            Spacer()
+        }
+        .font(.system(size: 11))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+        .overlay(panelBorder)
+    }
+
+    private var summaryPanel: some View {
+        Panel {
+            VStack(spacing: 0) {
+                HStack(spacing: 18) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 7) {
+                            Circle()
+                                .fill(model.collectorStatus.isHealthy ? Color.green : Color.secondary)
+                                .frame(width: 7, height: 7)
+                            Text("实时速率")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("当前热点连接")
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+
+                    Spacer()
+
+                    LiveRateTile(
+                        title: "下载",
+                        value: liveSpeed(model.collectorStatus.downloadBytesPerSecond),
+                        icon: "arrow.down",
+                        tint: .blue
+                    )
+                    Divider().frame(height: 38)
+                    LiveRateTile(
+                        title: "上传",
+                        value: liveSpeed(model.collectorStatus.uploadBytesPerSecond),
+                        icon: "arrow.up",
+                        tint: uploadColor
+                    )
+                    Divider().frame(height: 38)
+                    LiveRateTile(
+                        title: "合计",
+                        value: liveSpeed(model.collectorStatus.downloadBytesPerSecond + model.collectorStatus.uploadBytesPerSecond),
+                        icon: "arrow.up.arrow.down",
+                        tint: .secondary
+                    )
                 }
-                .font(.system(size: 11))
+                .padding(18)
+
+                Divider()
+
+                HStack(spacing: 0) {
+                    MetricTile(title: "总流量", value: bytes(model.summary.totalBytes), detail: rangeTitle, accent: .primary)
+                    Divider().frame(height: 52)
+                    MetricTile(title: "下载", value: bytes(model.summary.bytesIn), detail: "接收数据", accent: .blue)
+                    Divider().frame(height: 52)
+                    MetricTile(title: "上传", value: bytes(model.summary.bytesOut), detail: "发送数据", accent: uploadColor)
+                    Divider().frame(height: 52)
+                    MetricTile(title: "活跃应用", value: "\(model.summary.apps.count)", detail: "\(model.summary.sampleCount) 条采样", accent: .primary)
+                }
+                .padding(.vertical, 15)
             }
         }
     }
 
     private var dashboard: some View {
-        HStack(alignment: .top, spacing: 18) {
-            Surface {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 6) {
-                            sectionKicker("时间趋势")
-                            Text(model.selectedRange == .today ? "今天的流量分布" : "每天的流量走向")
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
-                        }
+        HStack(alignment: .top, spacing: 16) {
+            Panel {
+                VStack(alignment: .leading, spacing: 15) {
+                    HStack(alignment: .firstTextBaseline) {
+                        SectionTitle(title: "流量趋势", subtitle: model.selectedRange == .today ? "按小时" : "按天")
                         Spacer()
-                        Text(model.selectedRange == .today ? "按小时" : "按天")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                        ChartLegend(color: .blue, text: "下载")
+                        ChartLegend(color: uploadColor, text: "上传")
                     }
+
                     if model.summary.points.allSatisfy({ $0.totalBytes == 0 }) {
                         emptyChart
                     } else {
                         trafficChart
                     }
                 }
+                .padding(18)
             }
             .frame(maxWidth: .infinity)
 
-            Surface {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 6) {
-                            sectionKicker("应用排行")
-                            Text("谁用得最多")
-                                .font(.system(size: 18, weight: .bold, design: .rounded))
-                        }
+            Panel {
+                VStack(alignment: .leading, spacing: 15) {
+                    HStack(alignment: .firstTextBaseline) {
+                        SectionTitle(title: "应用排行", subtitle: "流量占用")
                         Spacer()
                         Text("Top 5")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
                     }
                     appRanking
                 }
+                .padding(18)
             }
-            .frame(width: 330)
+            .frame(width: 318)
         }
     }
 
     private var trafficChart: some View {
-        Chart(model.summary.points) { point in
-            AreaMark(
-                x: .value("时间", point.date),
-                y: .value("流量", point.totalBytes)
-            )
-            .foregroundStyle(Color.green.opacity(0.16))
-            LineMark(
-                x: .value("时间", point.date),
-                y: .value("流量", point.totalBytes)
-            )
-            .foregroundStyle(.green)
-            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-            PointMark(
-                x: .value("时间", point.date),
-                y: .value("流量", point.totalBytes)
-            )
-            .foregroundStyle(.green)
-            .symbolSize(24)
+        Chart {
+            ForEach(model.summary.points) { point in
+                LineMark(
+                    x: .value("时间", point.date),
+                    y: .value("下载", point.bytesIn),
+                    series: .value("方向", "下载")
+                )
+                .foregroundStyle(Color.blue)
+                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                .interpolationMethod(.monotone)
+
+                LineMark(
+                    x: .value("时间", point.date),
+                    y: .value("上传", point.bytesOut),
+                    series: .value("方向", "上传")
+                )
+                .foregroundStyle(uploadColor)
+                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                .interpolationMethod(.monotone)
+            }
         }
-        .chartYScale(domain: 0...max(model.summary.points.map(\.totalBytes).max() ?? 1, 1))
+        .chartLegend(.hidden)
+        .chartYScale(domain: 0...chartMaximum)
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: model.selectedRange == .today ? 6 : 7)) { value in
                 AxisGridLine().foregroundStyle(.quaternary)
-                AxisTick().foregroundStyle(.secondary)
+                AxisTick().foregroundStyle(.tertiary)
                 AxisValueLabel {
                     if let date = value.as(Date.self) {
                         Text(model.selectedRange == .today ? dateTime(date, timeOnly: true) : dateLabel(date))
@@ -248,35 +238,42 @@ struct ContentView: View {
             }
         }
         .chartYAxis {
-            AxisMarks { value in
+            AxisMarks(values: .automatic(desiredCount: 5)) { value in
                 AxisGridLine().foregroundStyle(.quaternary)
                 AxisValueLabel {
-                    if let number = value.as(Int64.self) { Text(bytes(number, compact: true)) }
+                    if let number = value.as(Int64.self) {
+                        Text(bytes(number, compact: true))
+                    }
                 }
             }
         }
-        .frame(height: 278)
+        .frame(height: 252)
     }
 
     private var appRanking: some View {
-        VStack(alignment: .leading, spacing: 17) {
+        VStack(alignment: .leading, spacing: 15) {
             if model.summary.apps.isEmpty {
                 Text("还没有应用流量")
                     .foregroundStyle(.secondary)
                     .font(.system(size: 12))
-                    .frame(maxWidth: .infinity, minHeight: 190, alignment: .center)
+                    .frame(maxWidth: .infinity, minHeight: 218, alignment: .center)
             } else {
-                let topTotal = max(model.summary.apps.map(\.totalBytes).reduce(0, +), 1)
+                let topValue = max(model.summary.apps.first?.totalBytes ?? 1, 1)
                 ForEach(model.summary.apps.prefix(5)) { app in
-                    VStack(alignment: .leading, spacing: 7) {
+                    VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
-                            Circle().fill(appColor(app.colorIndex)).frame(width: 8, height: 8)
-                            Text(app.process).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                            Text(app.category).font(.system(size: 10)).foregroundStyle(.secondary)
+                            Circle()
+                                .fill(appColor(app.colorIndex))
+                                .frame(width: 7, height: 7)
+                            Text(app.process)
+                                .font(.system(size: 11, weight: .medium))
+                                .lineLimit(1)
                             Spacer()
-                            Text(bytes(app.totalBytes, compact: true)).font(.system(size: 11, weight: .medium, design: .monospaced))
+                            Text(bytes(app.totalBytes, compact: true))
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
                         }
-                        ProgressView(value: Double(app.totalBytes), total: Double(topTotal))
+                        ProgressView(value: Double(app.totalBytes), total: Double(topValue))
+                            .progressViewStyle(.linear)
                             .tint(appColor(app.colorIndex))
                     }
                 }
@@ -284,137 +281,116 @@ struct ContentView: View {
         }
     }
 
-    private var details: some View {
-        Surface {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .bottom) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        sectionKicker("明细")
-                        Text("应用流量明细")
-                            .font(.system(size: 18, weight: .bold, design: .rounded))
-                    }
+    private var detailsPanel: some View {
+        Panel {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    SectionTitle(title: detailSection.title, subtitle: "\(detailRows.count) 项")
                     Spacer()
-                    Text("\(model.summary.apps.count) 个应用")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                    Picker("明细类型", selection: $detailSection) {
+                        Text("应用").tag(DetailSection.applications)
+                        Text("隧道").tag(DetailSection.tunnels)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 150)
                 }
 
-                Table(model.summary.apps) {
-                    TableColumn("应用") { app in
+                Table(detailRows) {
+                    TableColumn("进程") { app in
                         HStack(spacing: 8) {
                             Circle().fill(appColor(app.colorIndex)).frame(width: 7, height: 7)
-                            Text(app.process).fontWeight(.semibold)
+                            Text(app.process).fontWeight(.medium)
                         }
                     }
-                    TableColumn("类型") { app in Text(app.category).foregroundStyle(.secondary) }
-                    TableColumn("总流量") { app in Text(bytes(app.totalBytes)).monospacedDigit() }
-                    TableColumn("下载") { app in Text(bytes(app.bytesIn)).monospacedDigit() }
-                    TableColumn("上传") { app in Text(bytes(app.bytesOut)).monospacedDigit() }
-                    TableColumn("活跃天数") { app in Text("\(app.activeDays) 天").monospacedDigit() }
-                    TableColumn("最近记录") { app in Text(app.lastSeen.map { dateTime($0) } ?? "--").foregroundStyle(.secondary) }
-                }
-                .frame(minHeight: 220)
-            }
-        }
-    }
-
-    private var tunnelDetails: some View {
-        Surface {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .bottom) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        sectionKicker("隧道流量")
-                        Text("小火箭与传输层")
-                            .font(.system(size: 18, weight: .bold, design: .rounded))
+                    TableColumn("类型") { app in
+                        Text(app.category).foregroundStyle(.secondary)
                     }
-                    Spacer()
-                    Text("单独统计，不混入应用排行")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-
-                ForEach(model.summary.tunnels) { tunnel in
-                    HStack(spacing: 14) {
-                        Circle()
-                            .fill(appColor(tunnel.colorIndex))
-                            .frame(width: 8, height: 8)
-                        Text(tunnel.process)
-                            .font(.system(size: 13, weight: .semibold))
-                            .frame(width: 180, alignment: .leading)
-                        Text(tunnel.category)
-                            .font(.system(size: 11))
+                    TableColumn("总流量") { app in
+                        Text(bytes(app.totalBytes)).monospacedDigit()
+                    }
+                    TableColumn("下载") { app in
+                        Text(bytes(app.bytesIn)).monospacedDigit()
+                    }
+                    TableColumn("上传") { app in
+                        Text(bytes(app.bytesOut)).monospacedDigit()
+                    }
+                    TableColumn("活跃天数") { app in
+                        Text("\(app.activeDays) 天").monospacedDigit()
+                    }
+                    TableColumn("最近记录") { app in
+                        Text(app.lastSeen.map { dateTime($0) } ?? "--")
                             .foregroundStyle(.secondary)
-                            .frame(width: 80, alignment: .leading)
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 3) {
-                            Text(bytes(tunnel.totalBytes))
-                                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                            Text("↓ \(bytes(tunnel.bytesIn, compact: true))  ↑ \(bytes(tunnel.bytesOut, compact: true))")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 8)
-                    if tunnel.id != model.summary.tunnels.last?.id {
-                        Divider()
                     }
                 }
+                .frame(minHeight: 218)
             }
+            .padding(18)
         }
     }
 
     private var emptyState: some View {
-        Surface {
-            VStack(spacing: 12) {
+        Panel {
+            VStack(spacing: 10) {
                 Image(systemName: "waveform.path.ecg")
-                    .font(.system(size: 28))
-                    .foregroundStyle(.green)
+                    .font(.system(size: 24))
+                    .foregroundStyle(.secondary)
                 Text("还没有采样记录")
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                Text("连接热点后保持采集，数据会按进程写入本机历史。")
-                    .font(.system(size: 12))
+                    .font(.system(size: 15, weight: .semibold))
+                Text("连接热点后，应用流量会记录在这里")
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, minHeight: 260)
+            .frame(maxWidth: .infinity, minHeight: 230)
         }
     }
 
     private var emptyChart: some View {
         Text("这个时间范围还没有流量")
             .foregroundStyle(.secondary)
-            .font(.system(size: 12))
-            .frame(maxWidth: .infinity, minHeight: 278)
+            .font(.system(size: 11))
+            .frame(maxWidth: .infinity, minHeight: 252)
     }
 
     private func notice(icon: String, color: Color, text: String) -> some View {
         HStack(spacing: 9) {
             Image(systemName: icon).foregroundStyle(color)
-            Text(text).font(.system(size: 12))
+            Text(text).font(.system(size: 11))
             Spacer()
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 13)
+        .padding(.vertical, 9)
+        .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: 7))
     }
 
-    private func sectionKicker(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .bold, design: .rounded))
-            .tracking(1.2)
-            .foregroundStyle(.green)
+    private var detailRows: [AppUsage] {
+        detailSection == .applications ? model.summary.apps : model.summary.tunnels
+    }
+
+    private var chartMaximum: Int64 {
+        max(model.summary.points.flatMap { [$0.bytesIn, $0.bytesOut] }.max() ?? 1, 1)
+    }
+
+    private var panelBorder: some View {
+        RoundedRectangle(cornerRadius: 7)
+            .stroke(Color.primary.opacity(0.09), lineWidth: 1)
     }
 
     private var rangeTitle: String {
         switch model.selectedRange {
-        case .today: return "今天的应用流量汇总"
-        case .sevenDays: return "最近 7 天的应用流量汇总"
-        case .thirtyDays: return "最近 30 天的应用流量汇总"
-        case .custom: return "自定义范围的应用流量汇总"
+        case .today: return "今天"
+        case .sevenDays: return "最近 7 天"
+        case .thirtyDays: return "最近 30 天"
+        case .custom: return "自定义范围"
         }
     }
 
+    private var uploadColor: Color {
+        Color(red: 0.91, green: 0.34, blue: 0.29)
+    }
+
     private func appColor(_ index: Int) -> Color {
-        [.green, .blue, .orange, .purple, .red, .gray, .yellow][index % 7]
+        [.blue, .green, .orange, .purple, .red, .gray, .yellow][index % 7]
     }
 
     private func bytes(_ value: Int64, compact: Bool = false) -> String {
@@ -439,12 +415,10 @@ struct ContentView: View {
         let status = model.collectorStatus
         guard status.isRunning else { return "采集已暂停" }
         if status.isStale {
-            return status.lastSampleAt.map { "采集延迟 · 最近 \(dateTime($0))" } ?? "等待首次采样"
+            return status.lastSampleAt.map { "最近 \(dateTime($0))" } ?? "等待首次采样"
         }
         let seconds = max(Int(status.pollInterval.rounded()), 1)
-        return status.usesLowPowerPolling
-            ? "后台低功耗 · \(seconds) 秒刷新"
-            : "热点接口 · \(seconds) 秒刷新"
+        return status.usesLowPowerPolling ? "低功耗 · \(seconds) 秒" : "\(seconds) 秒刷新"
     }
 
     private var collectorStateTitle: String {
@@ -475,14 +449,44 @@ struct ContentView: View {
     }
 }
 
-private struct Surface<Content: View>: View {
+private enum DetailSection: String, Hashable {
+    case applications
+    case tunnels
+
+    var title: String {
+        switch self {
+        case .applications: return "应用明细"
+        case .tunnels: return "隧道明细"
+        }
+    }
+}
+
+private struct Panel<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         content()
-            .padding(22)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08)))
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(Color.primary.opacity(0.09), lineWidth: 1)
+            )
+    }
+}
+
+private struct SectionTitle: View {
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+            Text(subtitle)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -493,23 +497,22 @@ private struct MetricTile: View {
     let accent: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .tracking(0.9)
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 25, weight: .bold, design: .rounded))
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
                 .foregroundStyle(accent)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.72)
             Text(detail)
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 18)
     }
 }
 
@@ -522,20 +525,36 @@ private struct LiveRateTile: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 22, height: 22)
-                .background(tint.opacity(0.12), in: Circle())
-            VStack(alignment: .leading, spacing: 3) {
+                .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 5))
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 9))
                     .foregroundStyle(.secondary)
                 Text(value)
-                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.primary)
+                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .minimumScaleFactor(0.72)
             }
+        }
+        .frame(minWidth: 122, alignment: .leading)
+    }
+}
+
+private struct ChartLegend: View {
+    let color: Color
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Capsule()
+                .fill(color)
+                .frame(width: 13, height: 3)
+            Text(text)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
         }
     }
 }

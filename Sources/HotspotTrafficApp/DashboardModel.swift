@@ -10,6 +10,7 @@ final class DashboardModel: ObservableObject {
     @Published var customFrom: Date
     @Published var customTo: Date
     @Published private(set) var summary = TrafficSummary.empty
+    @Published private(set) var todaySummary = TrafficSummary.empty
     @Published private(set) var collectorStatus = CollectorStatus()
 
     let store: TrafficStore
@@ -37,6 +38,9 @@ final class DashboardModel: ObservableObject {
 
     func reload() {
         summary = store.summary(for: selectedRange, customFrom: customFrom, customTo: customTo)
+        todaySummary = selectedRange == .today
+            ? summary
+            : store.summary(for: .today, customFrom: customFrom, customTo: customTo)
         collectorStatus = collector.status
     }
 
