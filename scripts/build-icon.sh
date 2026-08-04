@@ -6,18 +6,8 @@ source_png="$project_dir/Assets/AppIcon.png"
 tiff_dir="$project_dir/.build/AppIcon.tiffs"
 combined_tiff="$project_dir/.build/AppIcon.tiff"
 
-mkdir -p "$project_dir/Assets" "$project_dir/Resources" "$tiff_dir"
-mkdir -p "$project_dir/.build/clang-module-cache"
-icon_sdk="$(xcrun --sdk macosx --show-sdk-path)"
-if test "$(xcode-select -p)" = /Library/Developer/CommandLineTools \
-    && test -d /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk; then
-    icon_sdk=/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk
-fi
-CLANG_MODULE_CACHE_PATH="$project_dir/.build/clang-module-cache" \
-    swift \
-    -sdk "$icon_sdk" \
-    "$project_dir/scripts/generate-icon.swift" \
-    "$source_png"
+mkdir -p "$project_dir/Resources" "$tiff_dir"
+test -f "$source_png"
 
 make_tiff() {
     size="$1"

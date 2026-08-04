@@ -1,5 +1,28 @@
 import Foundation
 
+enum ByteCount {
+    static func adding(_ lhs: Int64, _ rhs: Int64) -> Int64? {
+        let result = lhs.addingReportingOverflow(rhs)
+        return result.overflow ? nil : result.partialValue
+    }
+
+    static func saturatedAdding(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        guard let total = adding(lhs, rhs) else {
+            return lhs >= 0 && rhs >= 0 ? Int64.max : Int64.min
+        }
+        return total
+    }
+
+    static func sum<S: Sequence>(_ values: S) -> Int64? where S.Element == Int64 {
+        var total: Int64 = 0
+        for value in values {
+            guard let nextTotal = adding(total, value) else { return nil }
+            total = nextTotal
+        }
+        return total
+    }
+}
+
 enum TrafficRange: String, CaseIterable, Identifiable {
     case today
     case sevenDays
@@ -59,7 +82,7 @@ struct TrafficRecord {
     let bytesIn: Int64
     let bytesOut: Int64
 
-    var totalBytes: Int64 { bytesIn + bytesOut }
+    var totalBytes: Int64 { ByteCount.saturatedAdding(bytesIn, bytesOut) }
 }
 
 struct UsagePoint: Identifiable {
@@ -84,7 +107,7 @@ struct AppUsage: Identifiable {
     let colorIndex: Int
 
     var id: String { process }
-    var totalBytes: Int64 { bytesIn + bytesOut }
+    var totalBytes: Int64 { ByteCount.saturatedAdding(bytesIn, bytesOut) }
 }
 
 struct TrafficSummary {
@@ -129,16 +152,63 @@ struct CollectorStatus {
     var rateUpdatedAt: Date?
     var pollInterval: TimeInterval = 0
     var usesLowPowerPolling = false
-    var errorMessage: String?
+    private(set) var streamErrorMessage: String?
+    private(set) var storageErrorMessage: String?
+
+    var errorMessage: String? {
+        storageErrorMessage ?? streamErrorMessage
+    }
 
     var isStale: Bool {
+        isStale(at: Date())
+    }
+
+    func isStale(at date: Date) -> Bool {
         guard isRunning else { return false }
         guard let referenceDate = lastSampleAt ?? startedAt else { return true }
         let gracePeriod = max(pollInterval * 3, 90)
-        return Date().timeIntervalSince(referenceDate) > gracePeriod
+        return date.timeIntervalSince(referenceDate) > gracePeriod
     }
 
     var isHealthy: Bool {
         isRunning && errorMessage == nil && !isStale
+    }
+
+    mutating func recordFrame(
+        at date: Date,
+        recordCount: Int,
+        downloadBytesPerSecond: Int64,
+        uploadBytesPerSecond: Int64
+    ) {
+        lastSampleAt = date
+        lastRecordCount = recordCount
+        self.downloadBytesPerSecond = downloadBytesPerSecond
+        self.uploadBytesPerSecond = uploadBytesPerSecond
+        rateUpdatedAt = date
+        streamErrorMessage = nil
+    }
+
+    mutating func recordMissingFrame(at date: Date) {
+        lastRecordCount = 0
+        downloadBytesPerSecond = 0
+        uploadBytesPerSecond = 0
+        rateUpdatedAt = date
+    }
+
+    mutating func recordStreamFailure(_ message: String) {
+        streamErrorMessage = message
+    }
+
+    mutating func recordStorageFailure(_ message: String) {
+        storageErrorMessage = message
+    }
+
+    mutating func recordStorageSuccess() {
+        storageErrorMessage = nil
+    }
+
+    mutating func resetErrors() {
+        streamErrorMessage = nil
+        storageErrorMessage = nil
     }
 }

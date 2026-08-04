@@ -2,10 +2,11 @@
 set -eu
 
 project_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-version="${1:-1.0.0}"
+version="${1:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$project_dir/Resources/Info.plist")}"
 architecture="$(uname -m)"
 source_app="$project_dir/outputs/HotspotTraffic.app"
 release_root="$(mktemp -d /private/tmp/hotspot-release.XXXXXX)"
+trap 'rm -rf "$release_root"' EXIT HUP INT TERM
 release_app="$release_root/HotspotTraffic.app"
 archive="$project_dir/outputs/HotspotTraffic-v$version-macOS-$architecture.zip"
 

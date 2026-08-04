@@ -12,16 +12,13 @@ final class TrafficCollector: ObservableObject {
     private var heartbeatTimer: DispatchSourceTimer?
     private var activity: NSObjectProtocol?
     private var streamGeneration = 0
-    private var lastFrameAt: Date?
     private var isForeground = true
     private let foregroundPollInterval: TimeInterval = 5
     private let backgroundPollInterval: TimeInterval = 30
     private let foregroundHistoryInterval: TimeInterval = 60
     private let backgroundHistoryInterval: TimeInterval = 5 * 60
     private let heartbeatPersistenceInterval: TimeInterval = 60
-    private var pendingRecords: [PendingKey: PendingRecord] = [:]
-    private var pendingStartedAt: Date?
-    private var lastPersistAt: Date?
+    private var historyBuffer = TrafficHistoryBuffer()
     private var lastHeartbeatPersistAt: Date?
     var onData: (() -> Void)?
     var onStatus: ((CollectorStatus) -> Void)?
@@ -46,16 +43,18 @@ final class TrafficCollector: ObservableObject {
         guard !status.isRunning else { return }
         status.isRunning = true
         status.startedAt = Date()
-        status.errorMessage = nil
+        status.lastSampleAt = nil
+        status.lastRecordCount = 0
+        status.resetErrors()
         status.downloadBytesPerSecond = 0
         status.uploadBytesPerSecond = 0
+        status.rateUpdatedAt = nil
         status.pollInterval = currentPollInterval
         status.usesLowPowerPolling = !isForeground
-        pendingRecords.removeAll()
-        pendingStartedAt = nil
-        lastPersistAt = nil
+        if !historyBuffer.hasPendingRecords {
+            historyBuffer = TrafficHistoryBuffer()
+        }
         lastHeartbeatPersistAt = nil
-        lastFrameAt = nil
         beginMonitoringActivity()
         startNettopStream()
         recordHeartbeatIfNeeded(at: Date())
@@ -68,7 +67,7 @@ final class TrafficCollector: ObservableObject {
         nettopStream?.stop()
         nettopStream = nil
         cancelHeartbeat()
-        flushHistory(at: Date())
+        persist(historyBuffer.flush(), confirmedAt: Date())
         status.isRunning = false
         status.startedAt = nil
         status.downloadBytesPerSecond = 0
@@ -124,20 +123,17 @@ final class TrafficCollector: ObservableObject {
 
     private func recordHeartbeatIfNeeded(at date: Date) {
         guard status.isRunning else { return }
-        if let lastFrameAt, date.timeIntervalSince(lastFrameAt) < currentPollInterval * 1.5 {
+        if let lastSampleAt = status.lastSampleAt,
+           date.timeIntervalSince(lastSampleAt) < currentPollInterval * 1.5 {
             return
         }
-        status.lastSampleAt = date
-        status.lastRecordCount = 0
-        status.downloadBytesPerSecond = 0
-        status.uploadBytesPerSecond = 0
-        status.rateUpdatedAt = date
+        status.recordMissingFrame(at: date)
         recordNoTraffic(at: date)
         onStatus?(status)
     }
 
     private func recordNoTraffic(at date: Date) {
-        if pendingRecords.isEmpty {
+        if !historyBuffer.hasPendingRecords {
             persistHeartbeatIfNeeded(at: date)
         } else {
             accumulate([], at: date)
@@ -149,9 +145,9 @@ final class TrafficCollector: ObservableObject {
            date.timeIntervalSince(lastHeartbeatPersistAt) < heartbeatPersistenceInterval {
             return
         }
-        store.append([], sampledAt: date)
-        lastHeartbeatPersistAt = date
-        onData?()
+        persist([], sampledAt: date) {
+            self.lastHeartbeatPersistAt = date
+        }
     }
 
     private func beginMonitoringActivity() {
@@ -177,21 +173,20 @@ final class TrafficCollector: ObservableObject {
         let stream = NettopStream(sampleInterval: interval)
         stream.onFrame = { [weak self] lines, sampledAt in
             let records = NettopParser.parseFrame(lines, sampledAt: sampledAt)
-            let bytesIn = records.reduce(0) { $0 + $1.bytesIn }
-            let bytesOut = records.reduce(0) { $0 + $1.bytesOut }
+            let bytesIn = ByteCount.sum(records.lazy.map(\.bytesIn)) ?? Int64.max
+            let bytesOut = ByteCount.sum(records.lazy.map(\.bytesOut)) ?? Int64.max
             let divisor = max(interval, 1)
             let downloadRate = Int64((Double(bytesIn) / divisor).rounded())
             let uploadRate = Int64((Double(bytesOut) / divisor).rounded())
 
             Task { @MainActor in
                 guard let self, self.status.isRunning, self.streamGeneration == generation else { return }
-                self.status.errorMessage = nil
-                self.lastFrameAt = sampledAt
-                self.status.lastSampleAt = sampledAt
-                self.status.lastRecordCount = records.count
-                self.status.downloadBytesPerSecond = downloadRate
-                self.status.uploadBytesPerSecond = uploadRate
-                self.status.rateUpdatedAt = sampledAt
+                self.status.recordFrame(
+                    at: sampledAt,
+                    recordCount: records.count,
+                    downloadBytesPerSecond: downloadRate,
+                    uploadBytesPerSecond: uploadRate
+                )
                 if records.isEmpty {
                     self.recordNoTraffic(at: sampledAt)
                 } else {
@@ -205,7 +200,7 @@ final class TrafficCollector: ObservableObject {
                 guard let self, self.status.isRunning, self.streamGeneration == generation else { return }
                 self.status.downloadBytesPerSecond = 0
                 self.status.uploadBytesPerSecond = 0
-                self.status.errorMessage = message
+                self.status.recordStreamFailure(message)
                 self.onStatus?(self.status)
             }
         }
@@ -215,58 +210,38 @@ final class TrafficCollector: ObservableObject {
     }
 
     private func accumulate(_ records: [TrafficRecord], at date: Date) {
-        let isFirstSample = pendingStartedAt == nil
-        if isFirstSample { pendingStartedAt = date }
-        for record in records {
-            let key = PendingKey(
-                process: record.process,
-                pid: record.pid,
-                interfaceName: record.interfaceName,
-                state: record.state
-            )
-            var pending = pendingRecords[key] ?? PendingRecord()
-            pending.bytesIn += record.bytesIn
-            pending.bytesOut += record.bytesOut
-            pendingRecords[key] = pending
-        }
+        let batch = historyBuffer.append(
+            records,
+            at: date,
+            flushInterval: currentHistoryInterval
+        )
+        persist(batch, confirmedAt: date)
+    }
 
-        if isFirstSample || lastPersistAt == nil {
-            flushHistory(at: date)
-        } else if let lastPersistAt, date.timeIntervalSince(lastPersistAt) >= currentHistoryInterval {
-            flushHistory(at: date)
+    private func persist(_ batch: TrafficHistoryBatch?, confirmedAt date: Date) {
+        guard let batch else { return }
+        persist(batch.records, sampledAt: batch.sampledAt) {
+            self.historyBuffer.markPersisted(at: date)
         }
     }
 
-    private func flushHistory(at date: Date) {
-        guard let timestamp = pendingStartedAt else { return }
-        let records = pendingRecords.map { key, value in
-            TrafficRecord(
-                timestamp: timestamp,
-                process: key.process,
-                pid: key.pid,
-                interfaceName: key.interfaceName,
-                state: key.state,
-                bytesIn: value.bytesIn,
-                bytesOut: value.bytesOut
-            )
+    private func persist(
+        _ records: [TrafficRecord],
+        sampledAt: Date,
+        onSuccess: () -> Void
+    ) {
+        do {
+            try store.append(records, sampledAt: sampledAt)
+            onSuccess()
+            status.recordStorageSuccess()
+            onData?()
+        } catch {
+            reportStoreError(error)
         }
-        store.append(records, sampledAt: timestamp)
-        pendingRecords.removeAll()
-        pendingStartedAt = date
-        lastPersistAt = date
-        onData?()
     }
 
-}
-
-private struct PendingKey: Hashable {
-    let process: String
-    let pid: Int
-    let interfaceName: String
-    let state: String
-}
-
-private struct PendingRecord {
-    var bytesIn: Int64 = 0
-    var bytesOut: Int64 = 0
+    private func reportStoreError(_ error: Error) {
+        status.recordStorageFailure(error.localizedDescription)
+        onStatus?(status)
+    }
 }

@@ -34,7 +34,7 @@ enum NettopParser {
         let bytesInIndex = findColumn(headers, names: ["bytes_in", "bytes_received", "rx_bytes"], fallback: 4)
         let bytesOutIndex = findColumn(headers, names: ["bytes_out", "bytes_sent", "tx_bytes"], fallback: 5)
 
-        return lines[(headerIndex + 1)...].compactMap { line in
+        let records: [TrafficRecord] = lines[(headerIndex + 1)...].compactMap { line in
             let fields = csvFields(line)
             let maxIndex = max(processIndex, max(bytesInIndex, bytesOutIndex))
             guard maxIndex >= 0, fields.count > maxIndex else { return nil }
@@ -43,7 +43,7 @@ enum NettopParser {
             let explicitPID = pidIndex >= 0 && fields.count > pidIndex ? Int(parseNumber(fields[pidIndex])) : 0
             let bytesIn = parseNumber(fields[bytesInIndex])
             let bytesOut = parseNumber(fields[bytesOutIndex])
-            guard bytesIn + bytesOut > 0 else { return nil }
+            guard hasValidTotal(bytesIn: bytesIn, bytesOut: bytesOut) else { return nil }
 
             return TrafficRecord(
                 timestamp: sampledAt,
@@ -55,6 +55,7 @@ enum NettopParser {
                 bytesOut: bytesOut
             )
         }
+        return hasValidFrameTotal(records) ? records : []
     }
 
     static func parseFrame(
@@ -62,7 +63,7 @@ enum NettopParser {
         sampledAt: Date = Date(),
         interfaceName: String = "expensive"
     ) -> [TrafficRecord] {
-        lines.compactMap { line in
+        let records: [TrafficRecord] = lines.compactMap { line in
             let fields = csvFields(line)
             guard fields.count >= 3 else { return nil }
 
@@ -71,7 +72,7 @@ enum NettopParser {
             let processInfo = parseProcess(processValue)
             let bytesIn = parseNumber(field(fields, at: 1))
             let bytesOut = parseNumber(field(fields, at: 2))
-            guard bytesIn + bytesOut > 0 else { return nil }
+            guard hasValidTotal(bytesIn: bytesIn, bytesOut: bytesOut) else { return nil }
 
             return TrafficRecord(
                 timestamp: sampledAt,
@@ -83,6 +84,7 @@ enum NettopParser {
                 bytesOut: bytesOut
             )
         }
+        return hasValidFrameTotal(records) ? records : []
     }
 
     private static func csvFields(_ line: String) -> [String] {
@@ -141,7 +143,26 @@ enum NettopParser {
         let unit = match.range(at: 2).location == NSNotFound
             ? ""
             : Range(match.range(at: 2), in: raw).map { String(raw[$0]).lowercased() } ?? ""
-        return max(0, Int64((number * (units[unit.isEmpty ? "b" : unit] ?? 1)).rounded()))
+        let bytes = number * (units[unit.isEmpty ? "b" : unit] ?? 1)
+        guard bytes.isFinite, bytes >= 0, bytes < Double(Int64.max) else { return 0 }
+        return Int64(bytes.rounded())
+    }
+
+    private static func hasValidTotal(bytesIn: Int64, bytesOut: Int64) -> Bool {
+        guard let total = ByteCount.adding(bytesIn, bytesOut) else { return false }
+        return total > 0
+    }
+
+    private static func hasValidFrameTotal(_ records: [TrafficRecord]) -> Bool {
+        var bytesIn: Int64 = 0
+        var bytesOut: Int64 = 0
+        for record in records {
+            guard let nextBytesIn = ByteCount.adding(bytesIn, record.bytesIn),
+                  let nextBytesOut = ByteCount.adding(bytesOut, record.bytesOut) else { return false }
+            bytesIn = nextBytesIn
+            bytesOut = nextBytesOut
+        }
+        return ByteCount.adding(bytesIn, bytesOut) != nil
     }
 
     private static func parseProcess(_ value: String) -> (name: String, pid: Int) {

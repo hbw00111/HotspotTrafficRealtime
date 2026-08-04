@@ -20,7 +20,7 @@ Hotspot Traffic 使用 SwiftUI、系统自带的 `nettop` 和 SQLite，统计 Ma
 
 ## 下载
 
-前往 [Releases](../../releases/latest) 下载 `HotspotTraffic-v1.1.1-macOS-arm64.zip`，解压后打开 `HotspotTraffic.app`。当前预编译版本适用于 Apple Silicon Mac；其他架构可以按下文从源码构建。
+前往 [Releases](../../releases/latest) 下载 `HotspotTraffic-v1.1.2-macOS-arm64.zip`，解压后打开 `HotspotTraffic.app`。当前预编译版本适用于 Apple Silicon Mac；其他架构可以按下文从源码构建。
 
 当前构建使用临时本地签名。macOS 首次提示来源时，在 Finder 中右键 App，选择“打开”。
 
@@ -53,15 +53,7 @@ App 会生成到 `outputs/HotspotTraffic.app`。调试时也可以用 Xcode 打�
 运行核心验证：
 
 ```bash
-verify_dir="$(mktemp -d)"
-swiftc -parse-as-library \
-  Sources/HotspotTrafficApp/Models.swift \
-  Sources/HotspotTrafficApp/NettopParser.swift \
-  Sources/HotspotTrafficApp/TrafficStore.swift \
-  scripts/verify-core.swift \
-  -lsqlite3 \
-  -o "$verify_dir/verify-core"
-"$verify_dir/verify-core"
+./scripts/verify-core.sh
 ```
 
 ## 实现说明
